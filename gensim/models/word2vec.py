@@ -330,8 +330,8 @@ def score_sg_pair(model, word, word2):
     sgn = (-1.0)**word.code  # ch function, 0-> 1, 1 -> -1
     pair_score = -sgn*dot(l1, l2a.T)
     # Check to avoid underflow or overflow of exponent.
-    if (pair_score < MAX_EXP_LIMIT).all() and (pair_score > -MAX_EXP_LIMIT).all():
-        lprob = -log(1.0 + exp(-sgn*dot(l1, l2a.T)))
+    if (pair_score <= MAX_EXP_LIMIT).all() and (pair_score >= -MAX_EXP_LIMIT).all():
+        lprob = -log(1.0 + exp(pair_score))
     else:
         lprob = 0    # Return 0 otherwise.
     return sum(lprob)
@@ -342,8 +342,8 @@ def score_cbow_pair(model, word, word2_indices, l1):
     sgn = (-1.0)**word.code  # ch function, 0-> 1, 1 -> -1
     pair_score = -sgn*dot(l1, l2a.T)
     # Check to avoid underflow or overflow of exponent. 
-    if (pair_score < MAX_EXP_LIMIT).all() and (pair_score > -MAX_EXP_LIMIT).all():
-        lprob = -log(1.0 + exp(-sgn*dot(l1, l2a.T)))
+    if (pair_score <= MAX_EXP_LIMIT).all() and (pair_score >= -MAX_EXP_LIMIT).all():
+        lprob = -log(1.0 + exp(pair_score))
     else:
         lprob = 0   # Return 0 otherwise.
     return sum(lprob)
