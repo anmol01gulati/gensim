@@ -272,7 +272,7 @@ def train_sg_pair(model, word, context_index, alpha, learn_vectors=True, learn_h
         dot_product = dot(l1, l2b.T)
         # Check to avoid underflow or overflow of exponent.
         if (dot_product <= MAX_EXP_LIMIT).all() and (dot_product >= -MAX_EXP_LIMIT).all():
-            fb = 1. / (1. + exp(-dot(l1, l2b.T)))  # propagate hidden -> output
+            fb = 1. / (1. + exp(-dot_product))  # propagate hidden -> output
             gb = (model.neg_labels - fb) * alpha  # vector of error gradients multiplied by the learning rate
             if learn_hidden:
                 model.syn1neg[word_indices] += outer(gb, l1)  # learn hidden -> output
@@ -308,7 +308,7 @@ def train_cbow_pair(model, word, input_word_indices, l1, alpha, learn_vectors=Tr
         dot_product = dot(l1, l2b.T)
         # Check to avoid underflow or overflow of exponent.
         if (dot_product <= MAX_EXP_LIMIT).all() and (dot_product >= -MAX_EXP_LIMIT).all():
-            fb = 1. / (1. + exp(-dot(l1, l2b.T)))  # propagate hidden -> output
+            fb = 1. / (1. + exp(-dot_product))  # propagate hidden -> output
             gb = (model.neg_labels - fb) * alpha  # vector of error gradients multiplied by the learning rate
             if learn_hidden:
                 model.syn1neg[word_indices] += outer(gb, l1)  # learn hidden -> output
