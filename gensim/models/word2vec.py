@@ -95,6 +95,9 @@ from six import iteritems, itervalues, string_types
 from six.moves import xrange
 from types import GeneratorType
 
+# Maximum Limit for numpy.exp resulting in float64 range.
+MAX_EXP_LIMIT = 709
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -249,11 +252,14 @@ def train_sg_pair(model, word, context_index, alpha, learn_vectors=True, learn_h
     if model.hs:
         # work on the entire tree at once, to push as much work into numpy's C routines as possible (performance)
         l2a = deepcopy(model.syn1[predict_word.point])  # 2d matrix, codelen x layer1_size
-        fa = 1.0 / (1.0 + exp(-dot(l1, l2a.T)))  # propagate hidden -> output
-        ga = (1 - predict_word.code - fa) * alpha  # vector of error gradients multiplied by the learning rate
-        if learn_hidden:
-            model.syn1[predict_word.point] += outer(ga, l1)  # learn hidden -> output
-        neu1e += dot(ga, l2a)  # save error
+        dot_product = dot(l1,l2a.T)
+        # Check to avoid underflow or overflow of exponent.
+        if (dot_product <= MAX_EXP_LIMIT).all() and (dot_product >= -MAX_EXP_LIMIT).all():
+            fa = 1.0 / (1.0 + exp(-dot_product))  # propagate hidden -> output
+            ga = (1 - predict_word.code - fa) * alpha  # vector of error gradients multiplied by the learning rate
+            if learn_hidden:
+                model.syn1[predict_word.point] += outer(ga, l1)  # learn hidden -> output
+            neu1e += dot(ga, l2a)  # save error
 
     if model.negative:
         # use this word (label = 1) + `negative` other random words not from this sentence (label = 0)
@@ -263,11 +269,14 @@ def train_sg_pair(model, word, context_index, alpha, learn_vectors=True, learn_h
             if w != predict_word.index:
                 word_indices.append(w)
         l2b = model.syn1neg[word_indices]  # 2d matrix, k+1 x layer1_size
-        fb = 1. / (1. + exp(-dot(l1, l2b.T)))  # propagate hidden -> output
-        gb = (model.neg_labels - fb) * alpha  # vector of error gradients multiplied by the learning rate
-        if learn_hidden:
-            model.syn1neg[word_indices] += outer(gb, l1)  # learn hidden -> output
-        neu1e += dot(gb, l2b)  # save error
+        dot_product = dot(l1, l2b.T)
+        # Check to avoid underflow or overflow of exponent.
+        if (dot_product <= MAX_EXP_LIMIT).all() and (dot_product >= -MAX_EXP_LIMIT).all():
+            fb = 1. / (1. + exp(-dot(l1, l2b.T)))  # propagate hidden -> output
+            gb = (model.neg_labels - fb) * alpha  # vector of error gradients multiplied by the learning rate
+            if learn_hidden:
+                model.syn1neg[word_indices] += outer(gb, l1)  # learn hidden -> output
+            neu1e += dot(gb, l2b)  # save error
 
     if learn_vectors:
         l1 += neu1e * lock_factor  # learn input -> hidden (mutates model.syn0[word2.index], if that is l1)
@@ -279,11 +288,14 @@ def train_cbow_pair(model, word, input_word_indices, l1, alpha, learn_vectors=Tr
 
     if model.hs:
         l2a = model.syn1[word.point]  # 2d matrix, codelen x layer1_size
-        fa = 1. / (1. + exp(-dot(l1, l2a.T)))  # propagate hidden -> output
-        ga = (1. - word.code - fa) * alpha  # vector of error gradients multiplied by the learning rate
-        if learn_hidden:
-            model.syn1[word.point] += outer(ga, l1)  # learn hidden -> output
-        neu1e += dot(ga, l2a)  # save error
+        dot_product = dot(l1, l2a.T)
+        # Check to avoid underflow or overflow of exponent.
+        if (dot_product <= MAX_EXP_LIMIT).all() and (dot_product >= -MAX_EXP_LIMIT).all():
+            fa = 1. / (1. + exp(-dot_product))  # propagate hidden -> output
+            ga = (1. - word.code - fa) * alpha  # vector of error gradients multiplied by the learning rate
+            if learn_hidden:
+                model.syn1[word.point] += outer(ga, l1)  # learn hidden -> output
+            neu1e += dot(ga, l2a)  # save error
 
     if model.negative:
         # use this word (label = 1) + `negative` other random words not from this sentence (label = 0)
@@ -293,11 +305,14 @@ def train_cbow_pair(model, word, input_word_indices, l1, alpha, learn_vectors=Tr
             if w != word.index:
                 word_indices.append(w)
         l2b = model.syn1neg[word_indices]  # 2d matrix, k+1 x layer1_size
-        fb = 1. / (1. + exp(-dot(l1, l2b.T)))  # propagate hidden -> output
-        gb = (model.neg_labels - fb) * alpha  # vector of error gradients multiplied by the learning rate
-        if learn_hidden:
-            model.syn1neg[word_indices] += outer(gb, l1)  # learn hidden -> output
-        neu1e += dot(gb, l2b)  # save error
+        dot_product = dot(l1, l2b.T)
+        # Check to avoid underflow or overflow of exponent.
+        if (dot_product <= MAX_EXP_LIMIT).all() and (dot_product >= -MAX_EXP_LIMIT).all():
+            fb = 1. / (1. + exp(-dot(l1, l2b.T)))  # propagate hidden -> output
+            gb = (model.neg_labels - fb) * alpha  # vector of error gradients multiplied by the learning rate
+            if learn_hidden:
+                model.syn1neg[word_indices] += outer(gb, l1)  # learn hidden -> output
+            neu1e += dot(gb, l2b)  # save error
 
     if learn_vectors:
         # learn input -> hidden, here for all words in the window separately
@@ -313,14 +328,24 @@ def score_sg_pair(model, word, word2):
     l1 = model.syn0[word2.index]
     l2a = deepcopy(model.syn1[word.point])  # 2d matrix, codelen x layer1_size
     sgn = (-1.0)**word.code  # ch function, 0-> 1, 1 -> -1
-    lprob = -log(1.0 + exp(-sgn*dot(l1, l2a.T)))
+    pair_score = -sgn*dot(l1, l2a.T)
+    # Check to avoid underflow or overflow of exponent.
+    if (pair_score < MAX_EXP_LIMIT).all() and (pair_score > -MAX_EXP_LIMIT).all():
+        lprob = -log(1.0 + exp(-sgn*dot(l1, l2a.T)))
+    else:
+        lprob = 0    # Return 0 otherwise.
     return sum(lprob)
-
+    
 
 def score_cbow_pair(model, word, word2_indices, l1):
     l2a = model.syn1[word.point]  # 2d matrix, codelen x layer1_size
     sgn = (-1.0)**word.code  # ch function, 0-> 1, 1 -> -1
-    lprob = -log(1.0 + exp(-sgn*dot(l1, l2a.T)))
+    pair_score = -sgn*dot(l1, l2a.T)
+    # Check to avoid underflow or overflow of exponent. 
+    if (pair_score < MAX_EXP_LIMIT).all() and (pair_score > -MAX_EXP_LIMIT).all():
+        lprob = -log(1.0 + exp(-sgn*dot(l1, l2a.T)))
+    else:
+        lprob = 0   # Return 0 otherwise.
     return sum(lprob)
 
 
